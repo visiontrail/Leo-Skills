@@ -12,6 +12,7 @@ Automatically remove backgrounds from images and save the results as transparent
 Invoke this skill when the user requests any of the following:
 
 - Remove background from an image
+- Remove a specific color background (e.g., white, black)
 - Extract the main subject from an image
 - Make an image background transparent
 - Cut out the subject from a photo
@@ -108,14 +109,44 @@ python scripts/remove_bg.py <input> --only-mask
 
 ### Handling Specific Background Types
 
-When the user has specific requirements about which backgrounds to remove (e.g., "only remove white background"), use the threshold adjustments along with appropriate model selection:
+#### Color-Based Background Removal (Recommended for Solid Colors)
 
-- For solid color backgrounds (white, black): Use `--alpha-matting` with adjusted thresholds
+For solid color backgrounds like white, black, or any specific color, use the color-based removal method. This is faster and more precise than AI-based removal:
+
+```bash
+# Remove white background (default)
+python scripts/remove_bg.py <input> --color-bg
+
+# Remove black background
+python scripts/remove_bg.py <input> --color-bg --bg-color 0,0,0
+
+# Remove a custom color (e.g., light gray)
+python scripts/remove_bg.py <input> --color-bg --bg-color 200,200,200
+
+# Adjust tolerance (higher = more colors removed, lower = more precise)
+python scripts/remove_bg.py <input> --color-bg --bg-color 255,255,255 --color-tolerance 20
+```
+
+**Color-based parameters:**
+- `--color-bg`: Enable color-based background removal (faster, no AI)
+- `--bg-color`: RGB color to remove (default: 255,255,255 for white)
+- `--color-tolerance`: Color tolerance 0-255 (default: 30). Lower = more precise, Higher = more colors removed
+
+**When to use color-based removal:**
+- User says "remove white background" or "remove black background"
+- Images have solid, uniform backgrounds
+- Want faster processing without AI
+- Need to preserve all foreground details exactly
+
+#### AI-Based Background Removal (for Complex Scenes)
+
+When the user has specific requirements about which backgrounds to remove and the background is complex, use the AI model with threshold adjustments:
+
 - For complex backgrounds: Use default settings or `--post-process-mask`
-- For white backgrounds specifically: Try `--fg-threshold 280 --bg-threshold 25` with `--alpha-matting`
+- For white backgrounds with AI: Try `--fg-threshold 280 --bg-threshold 25` with `--alpha-matting`
 
 The AI should interpret user requirements and adjust parameters accordingly. For example:
-- "Remove only white background" → Use higher thresholds with alpha matting
+- "Remove only white background" → Use `--color-bg` (recommended) or AI with higher thresholds
 - "Remove background but keep hair details" → Use `--alpha-matting --erode-size 5` (smaller erode size)
 - "Remove background more aggressively" → Lower thresholds
 

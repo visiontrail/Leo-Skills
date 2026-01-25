@@ -18,6 +18,53 @@ except ImportError:
     exit(1)
 
 
+def remove_color_background(
+    img: Image.Image,
+    color: tuple = (255, 255, 255),
+    tolerance: int = 30
+) -> Image.Image:
+    """
+    Remove a specific color background from an image.
+
+    Args:
+        img: PIL Image object
+        color: RGB tuple of the color to remove (default: white)
+        tolerance: Color tolerance (0-255), higher = more colors removed
+
+    Returns:
+        PIL Image with transparent background
+    """
+    img = img.convert("RGBA")
+
+    # Get image data as array
+    data = img.getdata()
+
+    new_data = []
+    for pixel in data:
+        r, g, b, a = pixel
+        # Calculate color distance
+        dr = abs(r - color[0])
+        dg = abs(g - color[1])
+        db = abs(b - color[2])
+
+        # If pixel is close to target color, make it transparent
+        if dr <= tolerance and dg <= tolerance and db <= tolerance:
+            # Calculate alpha based on how close to the target color
+            # Closer = more transparent
+            max_diff = max(dr, dg, db)
+            if max_diff == 0:
+                new_data.append((0, 0, 0, 0))  # Fully transparent
+            else:
+                # Smooth transition at edges
+                alpha = int((max_diff / tolerance) * 255)
+                new_data.append((r, g, b, alpha))
+        else:
+            new_data.append((r, g, b, a))
+
+    img.putdata(new_data)
+    return img
+
+
 def process_image(
     input_path: Union[str, Path],
     output_path: Union[str, Path],
@@ -27,7 +74,10 @@ def process_image(
     alpha_matting_background_threshold=20,
     alpha_matting_erode_size=11,
     post_process_mask=False,
-    only_mask=False
+    only_mask=False,
+    color_bg=False,
+    bg_color=(255, 255, 255),
+    color_tolerance=30
 ) -> bool:
     """
     Remove background from a single image.
@@ -42,6 +92,9 @@ def process_image(
         alpha_matting_erode_size: Alpha matting erosion size (default: 11)
         post_process_mask: Post-process the mask for better results (default: False)
         only_mask: Return only the mask instead of the processed image (default: False)
+        color_bg: Use color-based background removal instead of AI (default: False)
+        bg_color: RGB color to remove when using color_bg (default: white)
+        color_tolerance: Color tolerance for color-based removal (default: 30)
 
     Returns:
         True if successful, False otherwise
@@ -55,17 +108,21 @@ def process_image(
 
         # Read input image
         with Image.open(input_path) as img:
-            # Remove background with parameters
-            result = remove(
-                img,
-                session=session,
-                alpha_matting=alpha_matting,
-                alpha_matting_foreground_threshold=alpha_matting_foreground_threshold,
-                alpha_matting_background_threshold=alpha_matting_background_threshold,
-                alpha_matting_erode_size=alpha_matting_erode_size,
-                post_process_mask=post_process_mask,
-                only_mask=only_mask
-            )
+            if color_bg:
+                # Use color-based background removal
+                result = remove_color_background(img, color=bg_color, tolerance=color_tolerance)
+            else:
+                # Remove background with AI model
+                result = remove(
+                    img,
+                    session=session,
+                    alpha_matting=alpha_matting,
+                    alpha_matting_foreground_threshold=alpha_matting_foreground_threshold,
+                    alpha_matting_background_threshold=alpha_matting_background_threshold,
+                    alpha_matting_erode_size=alpha_matting_erode_size,
+                    post_process_mask=post_process_mask,
+                    only_mask=only_mask
+                )
 
             # Save as PNG with transparency
             result.save(output_path, "PNG")
@@ -88,7 +145,10 @@ def process_directory(
     alpha_matting_background_threshold=20,
     alpha_matting_erode_size=11,
     post_process_mask=False,
-    only_mask=False
+    only_mask=False,
+    color_bg=False,
+    bg_color=(255, 255, 255),
+    color_tolerance=30
 ) -> int:
     """
     Remove background from all images in a directory.
@@ -104,6 +164,9 @@ def process_directory(
         alpha_matting_erode_size: Alpha matting erosion size (default: 11)
         post_process_mask: Post-process the mask for better results (default: False)
         only_mask: Return only the mask instead of the processed image (default: False)
+        color_bg: Use color-based background removal instead of AI (default: False)
+        bg_color: RGB color to remove when using color_bg (default: white)
+        color_tolerance: Color tolerance for color-based removal (default: 30)
 
     Returns:
         Number of successfully processed images
@@ -142,7 +205,10 @@ def process_directory(
             alpha_matting_background_threshold,
             alpha_matting_erode_size,
             post_process_mask,
-            only_mask
+            only_mask,
+            color_bg,
+            bg_color,
+            color_tolerance
         ):
             success_count += 1
 
@@ -240,6 +306,28 @@ Examples:
         help="Return only the mask instead of the processed image"
     )
 
+    # Color-based background removal options
+    color_group = parser.add_argument_group("Color-Based Background Removal")
+    color_group.add_argument(
+        "-c", "--color-bg",
+        action="store_true",
+        help="Use color-based background removal instead of AI (faster, for solid color backgrounds)"
+    )
+    color_group.add_argument(
+        "--bg-color",
+        type=str,
+        default="255,255,255",
+        metavar="R,G,B",
+        help="Background color to remove as RGB tuple (default: 255,255,255 for white)"
+    )
+    color_group.add_argument(
+        "--color-tolerance",
+        type=int,
+        default=30,
+        metavar="N",
+        help="Color tolerance for removal (default: 30, higher = more colors removed)"
+    )
+
     args = parser.parse_args()
 
     input_path = Path(args.input)
@@ -248,8 +336,17 @@ Examples:
         print(f"Error: Input path does not exist: {input_path}")
         exit(1)
 
-    # Create session for reuse
-    session = new_session(args.model)
+    # Parse background color
+    try:
+        bg_color = tuple(map(int, args.bg_color.split(',')))
+        if len(bg_color) != 3:
+            raise ValueError
+    except:
+        print("Error: bg-color must be in format R,G,B (e.g., 255,255,255)")
+        exit(1)
+
+    # Only create session if not using color-based removal
+    session = None if args.color_bg else new_session(args.model)
 
     if input_path.is_file():
         # Single image processing
@@ -271,7 +368,10 @@ Examples:
             args.bg_threshold,
             args.erode_size,
             args.post_process_mask,
-            args.only_mask
+            args.only_mask,
+            args.color_bg,
+            bg_color,
+            args.color_tolerance
         )
         exit(0 if success else 1)
 
@@ -292,7 +392,10 @@ Examples:
             alpha_matting_background_threshold=args.bg_threshold,
             alpha_matting_erode_size=args.erode_size,
             post_process_mask=args.post_process_mask,
-            only_mask=args.only_mask
+            only_mask=args.only_mask,
+            color_bg=args.color_bg,
+            bg_color=bg_color,
+            color_tolerance=args.color_tolerance
         )
         exit(0 if success_count > 0 else 1)
 
