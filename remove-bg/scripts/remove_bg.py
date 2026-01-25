@@ -10,12 +10,18 @@ from pathlib import Path
 from typing import List, Union
 
 try:
-    from rembg import remove, new_session
     from PIL import Image
 except ImportError:
-    print("Error: Required libraries not found.")
-    print("Please install: pip install rembg pillow")
+    print("Error: Required library 'pillow' not found.")
+    print("Please install: pip install pillow")
     exit(1)
+
+# rembg is optional for color-based background removal
+try:
+    from rembg import remove, new_session
+    REMBG_AVAILABLE = True
+except ImportError:
+    REMBG_AVAILABLE = False
 
 
 def remove_color_background(
@@ -113,6 +119,12 @@ def process_image(
                 result = remove_color_background(img, color=bg_color, tolerance=color_tolerance)
             else:
                 # Remove background with AI model
+                if not REMBG_AVAILABLE:
+                    print("Error: rembg library not found. Please install it:")
+                    print("  pip install \"rembg[cpu]\"  # for CPU")
+                    print("  pip install \"rembg[gpu]\"  # for NVIDIA/CUDA GPU")
+                    print("Or use --color-bg flag for color-based background removal (no AI required).")
+                    return False
                 result = remove(
                     img,
                     session=session,
@@ -346,7 +358,15 @@ Examples:
         exit(1)
 
     # Only create session if not using color-based removal
-    session = None if args.color_bg else new_session(args.model)
+    session = None
+    if not args.color_bg:
+        if not REMBG_AVAILABLE:
+            print("Error: rembg library not found. Please install it:")
+            print("  pip install \"rembg[cpu]\"  # for CPU")
+            print("  pip install \"rembg[gpu]\"  # for NVIDIA/CUDA GPU")
+            print("Or use --color-bg flag for color-based background removal (no AI required).")
+            exit(1)
+        session = new_session(args.model)
 
     if input_path.is_file():
         # Single image processing

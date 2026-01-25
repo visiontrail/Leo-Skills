@@ -155,8 +155,10 @@ The AI should interpret user requirements and adjust parameters accordingly. For
 The script requires the following Python packages:
 
 ```bash
-pip install rembg pillow
+pip install "rembg[cpu]" pillow
 ```
+
+**Important:** Use `"rembg[cpu]"` with brackets to ensure CPU support is installed. Without `[cpu]`, rembg will fail with "No onnxruntime backend found" error.
 
 ## Virtual Environment Management
 
@@ -171,16 +173,16 @@ Example workflow:
 
 ```bash
 # Create venv
-python -m venv .venv
+python3 -m venv .venv
 
 # Activate venv (macOS/Linux)
 source .venv/bin/activate
 
-# Install dependencies
-pip install rembg pillow
+# Install dependencies with CPU support
+pip3 install "rembg[cpu]" pillow
 
 # Run the script
-python scripts/remove_bg.py <input>
+python3 scripts/remove_bg.py <input>
 
 # Deactivate and clean up
 deactivate
@@ -191,16 +193,16 @@ For Windows:
 
 ```bash
 # Create venv
-python -m venv .venv
+python3 -m venv .venv
 
 # Activate venv
 .venv\Scripts\activate
 
-# Install dependencies
-pip install rembg pillow
+# Install dependencies with CPU support
+pip3 install "rembg[cpu]" pillow
 
 # Run the script
-python scripts/remove_bg.py <input>
+python3 scripts/remove_bg.py <input>
 
 # Deactivate and clean up
 deactivate
