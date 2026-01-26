@@ -98,14 +98,16 @@ python scripts/remove_bg.py <input> --alpha-matting --fg-threshold 200 --bg-thre
 #### Other Quality Options
 
 ```bash
-# Post-process mask for better results
+# Post-process the mask for better results
 python scripts/remove_bg.py <input> --post-process-mask
 ```
 
-```bash
-# Output only the mask (useful for debugging)
-python scripts/remove_bg.py <input> --only-mask
-```
+The `--post-process-mask` option applies post-processing to the AI-generated mask to improve quality. This helps:
+- Reduce noise and artifacts in the mask
+- Improve edge definition between foreground and background
+- Smoother, cleaner cutout results
+
+Use this when you notice rough edges, jagged boundaries, or small background artifacts in the output.
 
 ### Handling Specific Background Types
 
@@ -159,7 +161,7 @@ The AI should interpret user requirements and adjust parameters accordingly. For
 The script requires the following Python packages:
 
 ```bash
-pip install "rembg[cpu]" pillow
+pip3 install "rembg[cpu]" pillow
 ```
 
 **Important:** Use `"rembg[cpu]"` with brackets to ensure CPU support is installed. Without `[cpu]`, rembg will fail with "No onnxruntime backend found" error.
