@@ -117,6 +117,9 @@ For solid color backgrounds like white, black, or any specific color, use the co
 # Remove white background (default)
 python scripts/remove_bg.py <input> --color-bg
 
+# Remove only edge-connected background (keep interior color)
+python scripts/remove_bg.py <input> --color-bg --edge-aware
+
 # Remove black background
 python scripts/remove_bg.py <input> --color-bg --bg-color 0,0,0
 
@@ -131,6 +134,7 @@ python scripts/remove_bg.py <input> --color-bg --bg-color 255,255,255 --color-to
 - `--color-bg`: Enable color-based background removal (faster, no AI)
 - `--bg-color`: RGB color to remove (default: 255,255,255 for white)
 - `--color-tolerance`: Color tolerance 0-255 (default: 30). Lower = more precise, Higher = more colors removed
+- `--edge-aware`: Only remove pixels connected to image edges that match the background color. Automatically switches to color-based removal (default white) if you didn’t already set `--color-bg`, and still respects any `--bg-color`.
 
 **When to use color-based removal:**
 - User says "remove white background" or "remove black background"
@@ -214,3 +218,4 @@ rmdir /s /q .venv
 - All outputs are saved as PNG files with transparent backgrounds
 - Output filenames follow the pattern: `<original_name>_no_bg.png`
 - For directory processing, all outputs are placed in a single `output/` subdirectory
+

@@ -8,6 +8,7 @@ import argparse
 import os
 from pathlib import Path
 from typing import List, Union
+from collections import deque
 
 try:
     from PIL import Image
@@ -27,7 +28,8 @@ except ImportError:
 def remove_color_background(
     img: Image.Image,
     color: tuple = (255, 255, 255),
-    tolerance: int = 30
+    tolerance: int = 30,
+    edge_connected: bool = False
 ) -> Image.Image:
     """
     Remove a specific color background from an image.
@@ -36,36 +38,110 @@ def remove_color_background(
         img: PIL Image object
         color: RGB tuple of the color to remove (default: white)
         tolerance: Color tolerance (0-255), higher = more colors removed
+        edge_connected: If True, only remove background regions connected to the
+            image edges. This keeps interior areas (like white clothes/logos)
+            intact even if they match the background color.
 
     Returns:
         PIL Image with transparent background
     """
     img = img.convert("RGBA")
 
-    # Get image data as array
-    data = img.getdata()
+    # Fast path: original behavior (remove all pixels within tolerance)
+    if not edge_connected:
+        data = img.getdata()
+        new_data = []
+        for pixel in data:
+            r, g, b, a = pixel
+            dr = abs(r - color[0])
+            dg = abs(g - color[1])
+            db = abs(b - color[2])
 
-    new_data = []
-    for pixel in data:
-        r, g, b, a = pixel
-        # Calculate color distance
-        dr = abs(r - color[0])
-        dg = abs(g - color[1])
-        db = abs(b - color[2])
-
-        # If pixel is close to target color, make it transparent
-        if dr <= tolerance and dg <= tolerance and db <= tolerance:
-            # Calculate alpha based on how close to the target color
-            # Closer = more transparent
-            max_diff = max(dr, dg, db)
-            if max_diff == 0:
-                new_data.append((0, 0, 0, 0))  # Fully transparent
+            if dr <= tolerance and dg <= tolerance and db <= tolerance:
+                max_diff = max(dr, dg, db)
+                if max_diff == 0:
+                    new_data.append((0, 0, 0, 0))
+                else:
+                    alpha = int((max_diff / max(tolerance, 1)) * 255)
+                    new_data.append((r, g, b, alpha))
             else:
-                # Smooth transition at edges
-                alpha = int((max_diff / tolerance) * 255)
-                new_data.append((r, g, b, alpha))
-        else:
-            new_data.append((r, g, b, a))
+                new_data.append((r, g, b, a))
+
+        img.putdata(new_data)
+        return img
+
+    # Edge-connected mode: build mask of pixels similar to bg color
+    # Get image data as array
+    width, height = img.size
+    pixels = img.load()
+
+    candidate = bytearray(width * height)  # 1 if within tolerance
+    idx = 0
+    for y in range(height):
+        for x in range(width):
+            r, g, b, _ = pixels[x, y]
+            dr = abs(r - color[0])
+            dg = abs(g - color[1])
+            db = abs(b - color[2])
+            if dr <= tolerance and dg <= tolerance and db <= tolerance:
+                candidate[idx] = 1
+            idx += 1
+
+    # Flood-fill from edges to keep only background connected to borders
+    connected = bytearray(width * height)
+    q = deque()
+
+    # top and bottom rows
+    for x in range(width):
+        top_idx = x
+        bottom_idx = (height - 1) * width + x
+        if candidate[top_idx]:
+            q.append((x, 0))
+        if height > 1 and candidate[bottom_idx]:
+            q.append((x, height - 1))
+
+    # left and right columns
+    for y in range(height):
+        left_idx = y * width
+        right_idx = y * width + (width - 1)
+        if candidate[left_idx]:
+            q.append((0, y))
+        if width > 1 and candidate[right_idx]:
+            q.append((width - 1, y))
+
+    neighbors = ((1, 0), (-1, 0), (0, 1), (0, -1))
+    while q:
+        x, y = q.popleft()
+        idx = y * width + x
+        if connected[idx]:
+            continue
+        connected[idx] = 1
+        for dx, dy in neighbors:
+            nx, ny = x + dx, y + dy
+            if 0 <= nx < width and 0 <= ny < height:
+                n_idx = ny * width + nx
+                if candidate[n_idx] and not connected[n_idx]:
+                    q.append((nx, ny))
+
+    # Build final image: only connected background becomes transparent
+    new_data = []
+    idx = 0
+    for y in range(height):
+        for x in range(width):
+            r, g, b, a = pixels[x, y]
+            if connected[idx]:
+                dr = abs(r - color[0])
+                dg = abs(g - color[1])
+                db = abs(b - color[2])
+                max_diff = max(dr, dg, db)
+                if max_diff == 0 or tolerance == 0:
+                    new_data.append((0, 0, 0, 0))
+                else:
+                    alpha = int((max_diff / max(tolerance, 1)) * 255)
+                    new_data.append((r, g, b, alpha))
+            else:
+                new_data.append((r, g, b, a))
+            idx += 1
 
     img.putdata(new_data)
     return img
@@ -83,7 +159,8 @@ def process_image(
     only_mask=False,
     color_bg=False,
     bg_color=(255, 255, 255),
-    color_tolerance=30
+    color_tolerance=30,
+    edge_connected=False
 ) -> bool:
     """
     Remove background from a single image.
@@ -101,6 +178,8 @@ def process_image(
         color_bg: Use color-based background removal instead of AI (default: False)
         bg_color: RGB color to remove when using color_bg (default: white)
         color_tolerance: Color tolerance for color-based removal (default: 30)
+        edge_connected: When using color_bg, only remove regions connected to
+            image edges (preserves interior details)
 
     Returns:
         True if successful, False otherwise
@@ -116,7 +195,12 @@ def process_image(
         with Image.open(input_path) as img:
             if color_bg:
                 # Use color-based background removal
-                result = remove_color_background(img, color=bg_color, tolerance=color_tolerance)
+                result = remove_color_background(
+                    img,
+                    color=bg_color,
+                    tolerance=color_tolerance,
+                    edge_connected=edge_connected
+                )
             else:
                 # Remove background with AI model
                 if not REMBG_AVAILABLE:
@@ -160,7 +244,8 @@ def process_directory(
     only_mask=False,
     color_bg=False,
     bg_color=(255, 255, 255),
-    color_tolerance=30
+    color_tolerance=30,
+    edge_connected=False
 ) -> int:
     """
     Remove background from all images in a directory.
@@ -179,6 +264,8 @@ def process_directory(
         color_bg: Use color-based background removal instead of AI (default: False)
         bg_color: RGB color to remove when using color_bg (default: white)
         color_tolerance: Color tolerance for color-based removal (default: 30)
+        edge_connected: When using color_bg, only remove regions connected to
+            image edges (preserves interior details)
 
     Returns:
         Number of successfully processed images
@@ -220,7 +307,8 @@ def process_directory(
             only_mask,
             color_bg,
             bg_color,
-            color_tolerance
+            color_tolerance,
+            edge_connected
         ):
             success_count += 1
 
@@ -339,6 +427,11 @@ Examples:
         metavar="N",
         help="Color tolerance for removal (default: 30, higher = more colors removed)"
     )
+    color_group.add_argument(
+        "--edge-aware",
+        action="store_true",
+        help="When using --color-bg, only remove regions connected to the image edges to preserve interior details"
+    )
 
     args = parser.parse_args()
 
@@ -391,7 +484,8 @@ Examples:
             args.only_mask,
             args.color_bg,
             bg_color,
-            args.color_tolerance
+            args.color_tolerance,
+            args.edge_aware
         )
         exit(0 if success else 1)
 
@@ -415,7 +509,8 @@ Examples:
             only_mask=args.only_mask,
             color_bg=args.color_bg,
             bg_color=bg_color,
-            color_tolerance=args.color_tolerance
+            color_tolerance=args.color_tolerance,
+            edge_connected=args.edge_aware
         )
         exit(0 if success_count > 0 else 1)
 
