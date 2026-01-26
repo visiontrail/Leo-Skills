@@ -116,10 +116,10 @@ Use this when you notice rough edges, jagged boundaries, or small background art
 For solid color backgrounds like white, black, or any specific color, use the color-based removal method. This is faster and more precise than AI-based removal:
 
 ```bash
-# Remove white background (default)
+# Remove white background
 python scripts/remove_bg.py <input> --color-bg
 
-# Remove only edge-connected background (keep interior color)
+# Remove only edge-connected white background
 python scripts/remove_bg.py <input> --color-bg --edge-aware
 
 # Remove black background
